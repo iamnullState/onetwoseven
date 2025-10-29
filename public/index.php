@@ -1,37 +1,50 @@
 <?php
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\JsonResponse;
+
 $app = require __DIR__ . '/../bootstrap/app.php';
-$env = $app['env'];
 
-$appName = $env['APP_NAME'] ?? 'OneTwoSeven';
-$envName = ucfirst($env['APP_ENV'] ?? 'local');
-$debug = $env['APP_DEBUG'] ?? 'false';
+$request = Request::createFromGlobals();
 
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= htmlspecialchars($appName) ?></title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-dark text-light d-flex flex-column min-vh-100">
+$dispatcher = FastRoute\simpleDispatcher(function(FastRoute\RouteCollector $r) {
+    // API v1
+    $r->addGroup('/api/v1', function(FastRoute\RouteCollector $r) {
+        $r->addRoute('GET', '/health', [\App\Http\Controllers\Api\HealthController::class, 'show']);
+        // add more API routes here e.g. /devices, /ips ...
+    });
 
-  <div class="container text-center my-auto">
-    <h1 class="display-4 fw-bold"><?= htmlspecialchars($appName) ?></h1>
-    <p class="lead text-secondary">Environment: <strong><?= htmlspecialchars($envName) ?></strong></p>
+    // Web
+    $r->addRoute('GET', '/', [\App\Http\Controllers\Web\HomeController::class, 'index']);
+});
 
-    
+$routeInfo = $dispatcher->dispatch($request->getMethod(), $request->getPathInfo());
+switch ($routeInfo[0]) {
+    case FastRoute\Dispatcher::NOT_FOUND:
+        (new JsonResponse(['error' => 'Not Found'], 404))->send();
+        break;
 
-    <p class="mt-3 small text-secondary">
-      PHP <?= phpversion() ?> | <?= htmlspecialchars($_SERVER['SERVER_SOFTWARE'] ?? '') ?>
-    </p>
-  </div>
+    case FastRoute\Dispatcher::METHOD_NOT_ALLOWED:
+        (new JsonResponse(['error' => 'Method Not Allowed'], 405))->send();
+        break;
 
-  <footer class="mt-auto text-center py-3 text-muted small">
-    &copy; <?= date('Y') ?> <?= htmlspecialchars($appName) ?> — Built with PHP + Docker
-  </footer>
+    case FastRoute\Dispatcher::FOUND:
+        [$class, $method] = $routeInfo[1];
+        $vars = $routeInfo[2] ?? [];
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+        if (!class_exists($class)) {
+            (new JsonResponse(['error'=>'Controller not found'], 500))->send();
+            break;
+        }
+
+        $controller = new $class($app);
+        $response = $controller->$method($request, $vars);
+
+        if ($response instanceof Response) {
+            $response->send();
+        } else {
+            // Fallback: send JSON
+            (new JsonResponse($response))->send();
+        }
+        break;
+}

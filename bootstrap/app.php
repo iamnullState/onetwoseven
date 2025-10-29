@@ -1,14 +1,16 @@
 <?php
 use Dotenv\Dotenv;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Twig\Environment as TwigEnv;
+use Twig\Loader\FilesystemLoader;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-// Load environment
+// Env
 $dotenv = Dotenv::createImmutable(dirname(__DIR__));
 $dotenv->safeLoad();
 
-// Eloquent (MariaDB)
+// DB (Eloquent)
 $capsule = new Capsule;
 $capsule->addConnection([
     'driver'    => 'mysql',
@@ -24,7 +26,17 @@ $capsule->addConnection([
 $capsule->setAsGlobal();
 $capsule->bootEloquent();
 
+// Twig
+$twig = new TwigEnv(
+    new FilesystemLoader(dirname(__DIR__).'/app/Views'),
+    [
+        'cache' => false, // enable later: dirname(__DIR__).'/storage/cache/twig'
+        'debug' => ($_ENV['APP_DEBUG'] ?? 'false') === 'true',
+    ]
+);
+
 return [
-    'db'   => $capsule,
-    'env'  => $_ENV,
+    'env'   => $_ENV,
+    'db'    => $capsule,
+    'twig'  => $twig,
 ];
